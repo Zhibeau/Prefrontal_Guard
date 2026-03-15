@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local tool state
+.Xil/
+.claude/
+
+# Vivado / Vitis logs and journals
+*.jou
+*.log
+*.backup.jou
+*.backup.log
+hs_err_pid*
+
+# Generated hardware build outputs
+vivado_proj_usb/
+vivado_proj/
+vivado_proj_eth_smoke/
+vivado_proj_eth_smoke_alt/
+vivado_junk/
+impl/
+
+# Legacy generated outputs / heavyweight projects
+_legacy/impl/
+_legacy/logs/
+_legacy/vivado_proj/
+_legacy/vivado_proj_eth_smoke/
+_legacy/vivado_proj_eth_smoke_alt/
+_legacy/vivado_junk/
+_legacy/aegis_ml_prj/
+_legacy/aegis_shield_prj/
+_legacy/ethernet_test/
+_legacy/usb_test/
+
+# Generated IP build products
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.gen/
+*.sim/
+
+# Keep source trees, docs, scripts, constraints, and checked-in IP HDL

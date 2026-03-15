@@ -1,0 +1,6 @@
+
+Family       : artix7
+Device       : xc7a100ti
+Package      : -fgg484
+Speed Grade  : -1L
+Clock Period : 5

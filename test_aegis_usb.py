@@ -53,6 +53,7 @@ FRAME_BYTES  = FRAME_WORDS * 2   # 32 bytes — payload
 # The FPGA pads EP6 writes to 512 bytes (256 × 16-bit words) so the FX2LP
 # auto-commits a full USB packet (no PKTEND pin wired on this board).
 USB_PACKET_BYTES = 512
+DEFAULT_RX_BYTE_OFFSET = 138
 
 # ---------------------------------------------------------------------------
 # CC-CBF golden model (matches aegis_shield.v arithmetic exactly)
@@ -171,7 +172,7 @@ def pack_vector(x_t):
 def unpack_vector(data):
     return list(struct.unpack('<' + 'h' * FRAME_WORDS, data))
 
-def transact(dev, x_t, timeout_ms=2000):
+def transact(dev, x_t, timeout_ms=2000, rx_byte_offset=DEFAULT_RX_BYTE_OFFSET):
     """
     Send x_t as 32 bytes to EP2 OUT, receive 32 bytes from EP6 IN.
     Returns (received_vector_or_None, elapsed_ms).
@@ -199,13 +200,13 @@ def transact(dev, x_t, timeout_ms=2000):
         return None, (time.monotonic() - t0) * 1000
 
     elapsed_ms = (time.monotonic() - t0) * 1000
-    if len(rx) < FRAME_BYTES:
+    if len(rx) < rx_byte_offset + FRAME_BYTES:
         return None, elapsed_ms
-    # Extract first 32 bytes — the real shield output (rest is padding zeros)
-    return unpack_vector(rx[:FRAME_BYTES]), elapsed_ms
+    # Extract the 32-byte payload region used by the current FX2 USB path.
+    return unpack_vector(rx[rx_byte_offset:rx_byte_offset + FRAME_BYTES]), elapsed_ms
 
 
-def prime_same_vector(dev, x_t, prime_frames, timeout_ms=2000):
+def prime_same_vector(dev, x_t, prime_frames, timeout_ms=2000, rx_byte_offset=DEFAULT_RX_BYTE_OFFSET):
     """
     Send the same vector a number of times before the measured transaction.
 
@@ -214,7 +215,7 @@ def prime_same_vector(dev, x_t, prime_frames, timeout_ms=2000):
     Any responses returned during priming are intentionally discarded.
     """
     for _ in range(prime_frames):
-        transact(dev, x_t, timeout_ms=timeout_ms)
+        transact(dev, x_t, timeout_ms=timeout_ms, rx_byte_offset=rx_byte_offset)
 
 
 def fmt(v, n=6):
@@ -227,7 +228,7 @@ def fmt(v, n=6):
 # ---------------------------------------------------------------------------
 # Test suite
 # ---------------------------------------------------------------------------
-def run_tests(dev, anxiety=0, prime_frames=0):
+def run_tests(dev, anxiety=0, prime_frames=0, rx_byte_offset=DEFAULT_RX_BYTE_OFFSET):
     B = B_BASE - ((ALPHA * anxiety) >> 10)
     print(f"\n{'='*68}")
     print(f"  Aegis-Chip CC-CBF Test Harness  (USB / CY68013A FX2LP)")
@@ -235,6 +236,7 @@ def run_tests(dev, anxiety=0, prime_frames=0):
     print(f"  B = {B_BASE} − (({ALPHA}×{anxiety})>>10) = {B}")
     if prime_frames:
         print(f"  priming each case with {prime_frames} identical frame(s)")
+    print(f"  RX payload byte offset = {rx_byte_offset}")
     print(f"  W = {W[:8]}")
     print(f"      {W[8:]}")
     print(f"{'='*68}\n")
@@ -247,8 +249,8 @@ def run_tests(dev, anxiety=0, prime_frames=0):
         expected, h = reference_cbf(x_t, anxiety)
 
         if prime_frames:
-            prime_same_vector(dev, x_t, prime_frames)
-        received, ms = transact(dev, x_t)
+            prime_same_vector(dev, x_t, prime_frames, rx_byte_offset=rx_byte_offset)
+        received, ms = transact(dev, x_t, rx_byte_offset=rx_byte_offset)
 
         if received is None:
             status = FAIL
@@ -294,11 +296,12 @@ def run_tests(dev, anxiety=0, prime_frames=0):
 # ---------------------------------------------------------------------------
 # Interactive mode
 # ---------------------------------------------------------------------------
-def run_interactive(dev, anxiety=0, prime_frames=0):
+def run_interactive(dev, anxiety=0, prime_frames=0, rx_byte_offset=DEFAULT_RX_BYTE_OFFSET):
     B = B_BASE - ((ALPHA * anxiety) >> 10)
     print(f"\n{YLW}Interactive mode{RST}  (type 'quit' to exit)")
     print(f"Enter 16 comma-separated INT16 values for x_t.")
     print(f"anxiety_level={anxiety}  ({anxiety_to_buttons(anxiety)}),  B={B}\n")
+    print(f"RX payload byte offset={rx_byte_offset}\n")
     if prime_frames:
         print(f"Priming each entered vector with {prime_frames} identical frame(s).\n")
 
@@ -323,8 +326,8 @@ def run_interactive(dev, anxiety=0, prime_frames=0):
 
         expected, h = reference_cbf(vals, anxiety)
         if prime_frames:
-            prime_same_vector(dev, vals, prime_frames)
-        received, ms = transact(dev, vals)
+            prime_same_vector(dev, vals, prime_frames, rx_byte_offset=rx_byte_offset)
+        received, ms = transact(dev, vals, rx_byte_offset=rx_byte_offset)
 
         print(f"  h          = {h}")
         print(f"  expected   = {expected}")
@@ -357,6 +360,9 @@ def main():
     parser.add_argument("--prime-frames", type=int, default=0,
                         metavar="N",
                         help="Send N identical warm-up frames before each measured transaction")
+    parser.add_argument("--rx-byte-offset", type=int, default=DEFAULT_RX_BYTE_OFFSET,
+                        metavar="N",
+                        help="Byte offset within the 512-byte USB packet where the 32-byte payload begins")
     parser.add_argument("--single",
                         help='Run one vector, e.g. --single "-100,-100,...,-100"')
     args = parser.parse_args()
@@ -373,7 +379,8 @@ def main():
 
     try:
         if args.interactive:
-            run_interactive(dev, anxiety=args.anxiety, prime_frames=args.prime_frames)
+            run_interactive(dev, anxiety=args.anxiety, prime_frames=args.prime_frames,
+                            rx_byte_offset=args.rx_byte_offset)
         elif args.single:
             vals = [int(v.strip()) for v in args.single.split(",")]
             if len(vals) != FRAME_WORDS:
@@ -381,11 +388,12 @@ def main():
                 sys.exit(1)
             expected, h = reference_cbf(vals, args.anxiety)
             if args.prime_frames:
-                prime_same_vector(dev, vals, args.prime_frames)
-            received, ms = transact(dev, vals)
+                prime_same_vector(dev, vals, args.prime_frames, rx_byte_offset=args.rx_byte_offset)
+            received, ms = transact(dev, vals, rx_byte_offset=args.rx_byte_offset)
             print(f"anxiety  = {args.anxiety}  ({anxiety_to_buttons(args.anxiety)})")
             if args.prime_frames:
                 print(f"primed    = {args.prime_frames} identical frame(s)")
+            print(f"rx offset = {args.rx_byte_offset} byte(s)")
             print(f"x_t      = {vals}")
             print(f"h        = {h}")
             print(f"expected = {expected}")
@@ -394,7 +402,8 @@ def main():
             print(f"result   = {PASS if ok else FAIL}")
             sys.exit(0 if ok else 1)
         else:
-            run_tests(dev, anxiety=args.anxiety, prime_frames=args.prime_frames)
+            run_tests(dev, anxiety=args.anxiety, prime_frames=args.prime_frames,
+                      rx_byte_offset=args.rx_byte_offset)
     except KeyboardInterrupt:
         print("\nInterrupted.")
 

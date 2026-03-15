@@ -16,6 +16,12 @@ open_hw_manager
 connect_hw_server -allow_non_jtag
 
 # Auto-detect the first target (AX7102 presents as xc7a100t)
+set targets [get_hw_targets *]
+if {[llength $targets] == 0} {
+    error "No hardware targets found. Check JTAG cable/power and try again."
+}
+
+current_hw_target [lindex $targets 0]
 open_hw_target
 
 set dev [lindex [get_hw_devices] 0]

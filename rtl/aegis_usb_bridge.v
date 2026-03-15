@@ -86,6 +86,8 @@ module aegis_usb_bridge #(
     output wire        dbg_left_idle
 );
 
+localparam DEBUG_EP6_PATTERN = 1'b0;
+
 // -----------------------------------------------------------------------------
 // Chip-select tied permanently low (always selected)
 // -----------------------------------------------------------------------------
@@ -348,7 +350,8 @@ always @(posedge clk or negedge rst_n) begin
                 usb_fd_oe    <= 1'b1;                      // FPGA drives FD
                 // words 0..15: real shield output; words 16..255: zero padding
                 usb_fd_out   <= (tx_word_cnt < WORDS_PER_FRAME)
-                                ? tx_buf[tx_word_cnt[3:0]] : 16'd0;
+                                ? (DEBUG_EP6_PATTERN ? (16'd2000 + tx_word_cnt) : tx_buf[tx_word_cnt[3:0]])
+                                : 16'd0;
                 usb_slwr     <= 1'b1;
 
                 if (timer == WR_SETUP_CYCS - 1) begin
@@ -364,7 +367,8 @@ always @(posedge clk or negedge rst_n) begin
             // ------------------------------------------------------------------
             S_EP6_WR_ASSERT: begin
                 usb_fd_out <= (tx_word_cnt < WORDS_PER_FRAME)
-                             ? tx_buf[tx_word_cnt[3:0]] : 16'd0;  // hold stable
+                             ? (DEBUG_EP6_PATTERN ? (16'd2000 + tx_word_cnt) : tx_buf[tx_word_cnt[3:0]])
+                             : 16'd0;  // hold stable
                 usb_slwr   <= 1'b0;                 // write strobe
 
                 if (timer == WR_PULSE_CYCS - 1) begin
